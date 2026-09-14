@@ -1,0 +1,35 @@
+# Data and experiment outputs (never commit DeepSense 6G measurements)
+/data/
+checkpoints/
+runs/
+logs/
+*.log
+
+# Model files
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.npz
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "channeldreamer"
+version = "0.1.0"
+description = "Model-based offline RL for proactive mmWave beam management with DreamerV3-style world models on DeepSense 6G"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Emre Caslan" }]
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "torch",
+    "pyyaml",
+    "tqdm",
+    "matplotlib",
+    "pillow",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "black", "ipykernel"]
+
+[project.scripts]
+cd-train-baseline = "channeldreamer.scripts.train_baseline:main"
+cd-prepare-data = "channeldreamer.scripts.prepare_data:main"
+cd-evaluate = "channeldreamer.scripts.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]

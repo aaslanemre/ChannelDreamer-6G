@@ -1,0 +1,52 @@
+# Phase 1: data pipeline + regime labelling + reactive / Markov baselines.
+seed: 0
+
+data:
+  history: 8          # H past steps per window (incl. current)
+  horizon: 1          # predict the optimal beam k steps ahead
+  stride: 1
+  test_fraction: 0.25 # fraction of *segments* held out (segment-level split)
+  power_unit: linear  # power vectors are stored linear; metrics convert to dB
+
+synthetic:
+  n_segments: 12
+  segment_length: 400
+  drift_std: 0.15       # slow drift of the true beam angle (beam units / step)
+  transition_prob: 0.01 # per-step chance of a sharp transition
+  jump_min: 6
+  jump_max: 20
+  dip_db: 8.0           # peak-power dip at a transition
+  beamwidth: 2.0
+  noise_std: 0.02
+
+regimes:
+  beam_jump_threshold: 3        # |Δ optimal beam| > this  -> TRANSITION
+  power_drop_db_threshold: 3.0  # local peak-power drop > this (dB) -> TRANSITION
+  smoothing_window: 3           # moving average over the power series before labelling
+  drop_lookback: 3              # steps over which the drop is measured
+  dilation: 1                   # widen each transition by this many steps on each side
+
+env:
+  reward_unit: db       # db | linear
+  switching_penalty: 0.5
+
+predict_then_act:        # transformer forecaster + greedy controller (--predict-then-act)
+  d_model: 64
+  n_heads: 4
+  n_layers: 2
+  dim_feedforward: 128
+  dropout: 0.1
+  loss: power            # ce | power (soft target = softmax of target power in dB)
+  target_temperature: 1.0
+  lr: 0.001
+  weight_decay: 0.0001
+  epochs: 40
+  batch_size: 256
+  val_fraction: 0.1
+  patience: 8
+
+hardware:                # RTX 4070, 12 GB VRAM
+  device: auto
+  mixed_precision: true  # bf16 autocast for anything beyond the numpy baselines
+  batch_size: 32
+  max_vram_gb: 12
