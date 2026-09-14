@@ -2,7 +2,7 @@
 ## Related Work, Research Gap, and Positioning
 
 **Emre Can Aslan**, Doctoral Candidate, Programa de Engenharia Elétrica (PEE/COPPE), UFRJ
-**Advisors:** Prof. Thomas, Dr. Rodrigo Couto
+**Advisor:** Dr. Rodrigo Couto
 
 ## Executive Summary
 
