@@ -7,7 +7,19 @@ from .deepsense import (
     resolve_scenario_dir,
 )
 from .sequences import WindowedDataset, make_windows, split_segments
-from .synthetic import SyntheticBeamData, generate_synthetic
+from .synthetic import (
+    SyntheticBeamData,
+    SyntheticCIRData,
+    generate_synthetic,
+    generate_synthetic_cir,
+)
+from .wiworld import (
+    WiWorldColumns,
+    WiWorldDataset,
+    WiWorldLayout,
+    load_wiworld,
+    resolve_wiworld_columns,
+)
 
 __all__ = [
     "DeepSenseScenario",

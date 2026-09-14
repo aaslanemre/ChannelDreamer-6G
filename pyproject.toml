@@ -15,6 +15,7 @@ dependencies = [
     "pandas",
     "scipy",
     "torch",
+    "torchvision",
     "pyyaml",
     "tqdm",
     "matplotlib",
