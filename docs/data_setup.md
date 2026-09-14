@@ -65,6 +65,34 @@ Validate any scenario with:
 python -m channeldreamer.scripts.prepare_data --data-root data --scenario 33 --check-files
 ```
 
+### GPS files
+
+`unit2_loc` points to a per-sample text file with two lines (latitude, longitude in degrees);
+`unit1_loc` is the static base-station position (one file for every row).
+`channeldreamer.data.modalities.load_gps` reads both and projects the user position to local
+east/north metres relative to the base station (Scenario 33: the user stays within about
+−9 … 15 m east and −2 … 52 m north). `trajectory_windows` builds the `(N, 16, 4)` context the
+trajectory encoder consumes (position and per-step displacement, clamped at segment starts).
+
+### LiDAR files
+
+`unit1_lidar` points to ASCII PLY files (`x y z` as double, `intensity` as ushort, ~18 k points,
+range up to ~200 m). `read_ply_points` handles ASCII and binary PLY.
+
+### Offline caches for Phase 3 (`data/scenario33/cache/`)
+
+```bash
+python -m channeldreamer.scripts.prepare_data --data-root data --scenario 33 --pretokenize-lidar --precompute-camera
+```
+
+| cache | content | produced by |
+|---|---|---|
+| `cache/lidar/lidar_tokens_<index>.npz` | `tokens (16, 64)`, `centroids (16, 3)`, `groups (16, 32, 4)` per sample; FPS + kNN grouping within 60 m, seeded frozen mini-PointNet | `LidarTokenizer` (CPU, ~60 clouds/s) |
+| `cache/camera_features.npz` | `features (N, 512)` pooled ResNet-18 ImageNet features + `sample_index` | `CameraEncoder.encode_paths` (frozen backbone, GPU) |
+
+Training reads these small arrays through `make_sequence_batch`; raw point clouds and JPEGs
+are never touched by the world model.
+
 ## WiWorld-RealData (Phase 2, not downloaded yet)
 
 Dual-band (3.7 GHz / 6.775 GHz) complex channel impulse responses along a single public route,

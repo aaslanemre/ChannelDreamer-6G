@@ -380,6 +380,6 @@ def load_scenario(
         if col is not None:
             ds.modality_paths[key] = [scenario_dir / str(p).lstrip("./") for p in frame[col]]
     for col in columns.get("gps") or []:
-        if frame[col].dtype == object:  # file references, not numeric fields
+        if not pd.api.types.is_numeric_dtype(frame[col]):  # file references, not numeric fields
             ds.modality_paths[f"gps:{col}"] = [scenario_dir / str(p).lstrip("./") for p in frame[col]]
     return ds

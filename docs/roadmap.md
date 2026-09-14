@@ -10,7 +10,7 @@ heavy modalities (LiDAR) are pre-tokenised offline so training never touches raw
 | 0 | Positioning: related work, gap, contributions, risks (`docs/positioning.md`) | Done |
 | 1 | MVP pipeline on DeepSense beam power: loader, shared windowing, synthetic generator, regime labelling, regime-decomposed metrics, fully-observed offline MDP, reactive + Markov baselines | Done: 14 tests passing, verified on synthetic data and real Scenario 33. Predict-then-act (transformer forecaster + greedy controller) being added now |
 | 2 | WiWorld-RealData complex-CIR pipeline (dual-band 3.7 / 6.775 GHz, single public route) for the physics-grounded latent constraints of C3 | Scaffolded against a synthetic CIR generator; real-data validation pending the dataset download |
-| 3 | Multi-modal world model: camera (ResNet), LiDAR (offline PointNet-style tokens), GPS trajectory (MLP) encoders feeding a DreamerV3-style RSSM trained by sequence prediction | Starting now, using the real camera / LiDAR / radar / GPS files already present in `data/scenario33/unit1/` |
+| 3 | Multi-modal world model: camera (ResNet), LiDAR (offline PointNet-style tokens), GPS trajectory (MLP) encoders feeding a DreamerV3-style RSSM trained by sequence prediction | In progress: camera (frozen ResNet-18, cached features), LiDAR (offline FPS+kNN grouping + mini-PointNet tokens, cached), GPS trajectory MLP and the DreamerV3 RSSM are implemented and tested on real Scenario 33 batches; training loop and evaluation vs. baselines are next |
 | 4 | Actor-critic decision layer over imagined RSSM rollouts with switching-cost reward; horizon-1 ablation; switching-cost sweep | Not started |
 | 5 | Transfer and generalisation: real vs. synthetic regimes, across DeepSense scenarios, cross-band on WiWorld | Not started |
 
@@ -27,8 +27,12 @@ column names because the manifest format has not been inspected yet. Tested only
 `generate_synthetic_cir()`.
 
 **Phase 3 (in progress).** Encoders in `channeldreamer.models.encoders`, RSSM in
-`channeldreamer.models.world_model`. Start small (`deter_dim=256`) and grow only if memory
-allows; report `torch.cuda.max_memory_allocated()` at each stage so Phase-4 headroom is known.
+`channeldreamer.models.world_model`. Offline caches (`prepare_data.py --pretokenize-lidar
+--precompute-camera`) keep raw point clouds and JPEGs out of the training loop. Start small
+(`deter_dim=256`) and grow only if memory allows; `scripts/profile_phase3.py` reports
+`torch.cuda.max_memory_allocated()` per stage so Phase-4 headroom is known. Remaining: the
+world-model training script, regime-decomposed evaluation of `WorldModel.predict_scores`
+against the baselines, and the physics losses of C3 once WiWorld data are available.
 
 **Phase 4.** Actor + critic on imagined rollouts (`channeldreamer.rl.actor_critic`), with the
 switching penalty computed analytically from the known action sequence. Required ablation:
