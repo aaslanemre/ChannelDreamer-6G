@@ -51,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-samples", type=int, default=None)
     p.add_argument("--modalities", default="power,camera,lidar,trajectory")
     # world model
+    p.add_argument("--wm-checkpoint", default=None,
+                   help="load a trained world model (scripts.train_world_model) and skip world-model training")
     p.add_argument("--wm-steps", type=int, default=600)
     p.add_argument("--wm-lr", type=float, default=1e-4)
     p.add_argument("--wm-batch", type=int, default=16)
@@ -141,14 +143,25 @@ def run(args: argparse.Namespace) -> dict:
                                    lidar_centroids=side.get("lidar_centroids"), trajectory=side.get("trajectory"), device=dev)
 
     # ---------------------------------------------------------- world model
-    rcfg = RSSMConfig(deter_dim=args.deter_dim, action_dim=64 if args.action_conditioned else 0)
-    wm = WorldModel(rcfg, EncoderConfig(embed_dim=rcfg.embed_dim, modalities=mods)).to(dev)
+    wm_log = []
+    if args.wm_checkpoint:
+        ck = torch.load(args.wm_checkpoint, map_location=dev, weights_only=False)
+        rcfg = RSSMConfig(**ck["rssm_config"])
+        if tuple(ck["modalities"]) != mods:
+            raise SystemExit(f"checkpoint modalities {ck['modalities']} != --modalities {mods}")
+        wm = WorldModel(rcfg, EncoderConfig(embed_dim=rcfg.embed_dim, modalities=mods)).to(dev)
+        wm.load_state_dict(ck["world_model"])
+        args.wm_steps = 0
+        print(f"[world model] loaded {args.wm_checkpoint} (step {ck.get('step')}, exogenous={not rcfg.action_dim}); "
+              f"held-out greedy regret at save time: {ck.get('test')}")
+    else:
+        rcfg = RSSMConfig(deter_dim=args.deter_dim, action_dim=64 if args.action_conditioned else 0)
+        wm = WorldModel(rcfg, EncoderConfig(embed_dim=rcfg.embed_dim, modalities=mods)).to(dev)
     opt = torch.optim.AdamW([q for q in wm.parameters() if q.requires_grad], lr=args.wm_lr)
     print(f"[world model] {count_parameters(wm):,} trainable params; {args.wm_steps} steps of "
           f"B={args.wm_batch} x T={args.wm_seq} on {len(seq_w)} train sequences")
     torch.cuda.reset_peak_memory_stats()
     t0 = time.time()
-    wm_log = []
     for step in range(1, args.wm_steps + 1):
         wm.train()
         loss, m = wm.loss(sample_batch(args.wm_batch))

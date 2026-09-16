@@ -253,3 +253,42 @@ report that table as a Phase-3 result; (2) give the actor-critic enough updates 
 larger `actor_lr`) to reach < 0.2 dB imagined regret against the model with a state-dependent
 table; (3) only then sweep the switching cost and the imagination horizon (including the
 horizon-1 ablation). GPU is not a constraint: 165-180 MB peak for the whole stack.
+
+## 7. Phase 3 result: world-model one-step prediction vs. the baselines
+
+Closed with `python -m channeldreamer.scripts.train_world_model --max-steps 60000 --eval-every 1000`
+(exogenous RSSM, `deter_dim = 256`, 16x16 latents, cached camera + LiDAR + GPS features, B = 16
+x T = 16, `lr = 1e-4`). The stopping rule never looks at the test segments: two of the 14
+training segments (420 windows, 21 transition) are held out as validation, and training stops
+when the greedy one-step regret on validation is <= reactive's on *both* regimes for two
+consecutive evaluations, or on a 10-evaluation plateau, or at the step cap. The run met the
+target at 18k and 19k steps (340 s, peak 290 MB) and the 19k checkpoint is kept.
+
+Trend: the loss fell fast to ~0.70 by 3k steps and then barely moved (0.69-0.70), while the
+prediction regret kept improving for another 15k steps as the reconstruction term went
+0.040 -> 0.018 and the KL rose from 0.71 to 0.91 nats (the latent progressively took up the
+observation). Validation regret, stable / transition, in dB: 1.46 / 1.59 (1k), 0.73 / 1.11 (3k),
+0.25 / 0.85 (5k), 0.14 / 0.59 (7k), 0.13 / 0.48 (9k), 0.10 / 0.46 (15k), 0.09 / 0.36 (19k);
+reactive on the same windows 0.105 / 0.442.
+
+Held-out test segments (937 windows, 90 transition), the same table as the Phase-1 baselines:
+
+| method | top-1 | top-3 | loss dB stable | loss dB transition | loss dB overall |
+|---|---|---|---|---|---|
+| reactive | 0.409 | 0.733 | 0.18 | 0.43 | 0.20 |
+| Markov | 0.422 | 0.711 | 0.20 | 0.45 | 0.22 |
+| predict-then-act | 0.417 | 0.769 | 0.12 | 0.46 | 0.15 |
+| world model, greedy one-step | 0.410 | 0.772 | 0.15 | 0.42 | 0.18 |
+| oracle | 1.000 | 1.000 | 0.00 | 0.00 | 0.00 |
+
+The world model beats reactive on stable windows (0.15 vs 0.18 dB) and matches it at
+transitions (0.42 vs 0.43 dB; with 90 transition windows this difference is within noise), so
+the Phase-3 target "at least reactive on both regimes" is met on the held-out segments as
+well as on validation. It is not yet as good as predict-then-act on stable windows
+(0.15 vs 0.12 dB) and both are no better than reactive at transitions, which is the honest
+state of one-step *prediction* on this scenario: the transition regime is where nothing
+predicts yet. Diagnostics that were broken in the smoke runs are now healthy: the posterior
+state reproduces the observed table with 0.15 dB regret (per-beam RMSE 0.74 dB, down from
+1.35), and the greedy policy uses 49 distinct beams over the test set (truly optimal: 54).
+This checkpoint (`runs/world_model/checkpoint.pt`, gitignored) is the frozen world model for
+Phase 4.
