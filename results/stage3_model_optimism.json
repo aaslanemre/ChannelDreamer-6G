@@ -1,0 +1,126 @@
+{
+  "timestamp": "2026-09-16T18:32:19+00:00",
+  "git_commit": "923c890-dirty",
+  "description": "Predicted vs realized gain of switching to the world model's best beam (optimizer's curse diagnostic)",
+  "world_model_checkpoint": "runs/world_model/checkpoint.pt",
+  "world_model_step": 19000,
+  "penalties": [
+    0.25,
+    0.5,
+    1.0
+  ],
+  "splits": {
+    "validation": {
+      "segments": [
+        11,
+        15
+      ],
+      "n_windows": 420,
+      "model_beam_differs_from_current_pct": 59.523809523809526,
+      "by_regime": {
+        "overall": {
+          "n": 420,
+          "predicted_gain_db": 0.14161856472492218,
+          "realized_gain_db": 0.016340031388778778,
+          "oracle_gain_db": 0.12203737521649793,
+          "pct_predicted_gain_over_0.25": 13.571428571428571,
+          "pct_predicted_gain_over_0.5": 8.333333333333332,
+          "pct_predicted_gain_over_1": 3.8095238095238098,
+          "pct_realized_gain_over_0.25": 7.380952380952381,
+          "pct_realized_gain_over_0.5": 2.857142857142857,
+          "pct_realized_gain_over_1": 0.7142857142857143,
+          "pct_oracle_gain_over_0.25": 13.333333333333334,
+          "pct_oracle_gain_over_0.5": 7.380952380952381,
+          "pct_oracle_gain_over_1": 1.4285714285714286
+        },
+        "stable": {
+          "n": 399,
+          "predicted_gain_db": 0.12329738587141037,
+          "realized_gain_db": 0.012796115340078518,
+          "oracle_gain_db": 0.10517658746716693,
+          "pct_predicted_gain_over_0.25": 12.030075187969924,
+          "pct_predicted_gain_over_0.5": 6.7669172932330826,
+          "pct_predicted_gain_over_1": 2.756892230576441,
+          "pct_realized_gain_over_0.25": 6.516290726817042,
+          "pct_realized_gain_over_0.5": 1.7543859649122806,
+          "pct_realized_gain_over_1": 0.5012531328320802,
+          "pct_oracle_gain_over_0.25": 11.278195488721805,
+          "pct_oracle_gain_over_0.5": 5.513784461152882,
+          "pct_oracle_gain_over_1": 1.0025062656641603
+        },
+        "transition": {
+          "n": 21,
+          "predicted_gain_db": 0.4897211194038391,
+          "realized_gain_db": 0.0836744363140837,
+          "oracle_gain_db": 0.4423923424537868,
+          "pct_predicted_gain_over_0.25": 42.857142857142854,
+          "pct_predicted_gain_over_0.5": 38.095238095238095,
+          "pct_predicted_gain_over_1": 23.809523809523807,
+          "pct_realized_gain_over_0.25": 23.809523809523807,
+          "pct_realized_gain_over_0.5": 23.809523809523807,
+          "pct_realized_gain_over_1": 4.761904761904762,
+          "pct_oracle_gain_over_0.25": 52.38095238095239,
+          "pct_oracle_gain_over_0.5": 42.857142857142854,
+          "pct_oracle_gain_over_1": 9.523809523809524
+        }
+      }
+    },
+    "test": {
+      "segments": [
+        2,
+        3,
+        10,
+        12
+      ],
+      "n_windows": 937,
+      "model_beam_differs_from_current_pct": 58.911419423692635,
+      "by_regime": {
+        "overall": {
+          "n": 937,
+          "predicted_gain_db": 0.2284652441740036,
+          "realized_gain_db": 0.027185460619501795,
+          "oracle_gain_db": 0.20264566279056864,
+          "pct_predicted_gain_over_0.25": 19.2102454642476,
+          "pct_predicted_gain_over_0.5": 12.700106723585913,
+          "pct_predicted_gain_over_1": 7.4706510138740665,
+          "pct_realized_gain_over_0.25": 10.56563500533618,
+          "pct_realized_gain_over_0.5": 5.869797225186766,
+          "pct_realized_gain_over_1": 2.2411953041622197,
+          "pct_oracle_gain_over_0.25": 21.558164354322304,
+          "pct_oracle_gain_over_0.5": 11.52614727854856,
+          "pct_oracle_gain_over_1": 4.5891141942369265
+        },
+        "stable": {
+          "n": 847,
+          "predicted_gain_db": 0.17581097781658173,
+          "realized_gain_db": 0.028415607615129092,
+          "oracle_gain_db": 0.17802998649444834,
+          "pct_predicted_gain_over_0.25": 14.757969303423849,
+          "pct_predicted_gain_over_0.5": 8.85478158205431,
+          "pct_predicted_gain_over_1": 4.8406139315230226,
+          "pct_realized_gain_over_0.25": 9.563164108618654,
+          "pct_realized_gain_over_0.5": 5.548996458087367,
+          "pct_realized_gain_over_1": 2.125147579693034,
+          "pct_oracle_gain_over_0.25": 17.591499409681226,
+          "pct_oracle_gain_over_0.5": 10.035419126328216,
+          "pct_oracle_gain_over_1": 4.014167650531287
+        },
+        "transition": {
+          "n": 90,
+          "predicted_gain_db": 0.7240004539489746,
+          "realized_gain_db": 0.015608410560653797,
+          "oracle_gain_db": 0.4343065274885008,
+          "pct_predicted_gain_over_0.25": 61.111111111111114,
+          "pct_predicted_gain_over_0.5": 48.888888888888886,
+          "pct_predicted_gain_over_1": 32.22222222222222,
+          "pct_realized_gain_over_0.25": 20.0,
+          "pct_realized_gain_over_0.5": 8.88888888888889,
+          "pct_realized_gain_over_1": 3.3333333333333335,
+          "pct_oracle_gain_over_0.25": 58.88888888888889,
+          "pct_oracle_gain_over_0.5": 25.555555555555554,
+          "pct_oracle_gain_over_1": 10.0
+        }
+      }
+    }
+  }
+}
