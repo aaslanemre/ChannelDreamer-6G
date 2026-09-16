@@ -299,8 +299,9 @@ class WorldModel(nn.Module):
         l_dyn, l_rep, raw_kl = self.rssm.kl_loss(post, prior)
         total = (c.recon_scale * l_recon + c.reward_scale * l_reward + c.continue_scale * l_cont
                  + c.kl_dyn_scale * l_dyn + c.kl_rep_scale * l_rep)
-        metrics = {"loss": float(total), "recon": float(l_recon), "reward": float(l_reward),
-                   "cont": float(l_cont), "kl_dyn": float(l_dyn), "kl_rep": float(l_rep), "kl": float(raw_kl)}
+        _f = lambda t: float(t.detach())  # noqa: E731  (avoid grad->scalar warning)
+        metrics = {"loss": _f(total), "recon": _f(l_recon), "reward": _f(l_reward),
+                   "cont": _f(l_cont), "kl_dyn": _f(l_dyn), "kl_rep": _f(l_rep), "kl": _f(raw_kl)}
         return total, metrics
 
     # ------------------------------------------------------------ interfaces
