@@ -72,6 +72,36 @@ model, and the policy only optimizes the reward stream.
 Open question for the advisor: is the exogeneity assumption acceptable, or does
 handover (which could change which BS serves the user) break it?
 
+**Finding (Phase 4 smoke run): exogeneity must be enforced architecturally, not just
+assumed.** The Phase-3 RSSM was, for DreamerV3 fidelity, conditioned on the logged behaviour
+action - the one-hot of the *previous optimal beam* (`WorldModel.actions_from_obs`). That
+action is a deterministic function of the previous observation and a near-perfect predictor
+of the next power vector, so the GRU learned to read it as an observation. The model looked
+excellent (on synthetic data: 0.08 dB one-step prediction regret, current-beam linear-probe
+accuracy 0.88 from the latent) but the accuracy came from the leaked action, not from the
+dynamics: with the action input removed the same small model's probe accuracy fell to 0.34.
+In imagination the leak is fatal - the actor's own action enters the GRU, so whichever beam
+the actor picks the model predicts that beam is good, and the learned policy collapsed to one
+state-independent beam with ~21 dB *real* regret on the same model. The RSSM is therefore
+trained with `RSSMConfig.action_dim = 0` (a pure exogenous sequence model; the imagined
+latent trajectory cannot depend on the policy), which is exactly the assumption above turned
+into a constraint; the action-conditioned model survives only as an ablation flag
+(`train_actor_critic.py --action-conditioned`). This is the concrete evidence that R4 is not
+a formality: an offline world model that is *allowed* to see the logged action will use it,
+and the policy trained inside it will exploit that.
+
+**Finding (same run): the actor's gradient must use the exact expectation over the predicted
+reward table.** The original instruction was a straight-through categorical action with the
+imagined reward read from the table at the sampled index. That estimator's gradient at the
+sampled slot equals the raw reward value; because rewards are received power in dB (all
+negative, -1 to -9 dB), every sampled beam is pushed down regardless of its relative merit and
+the policy collapses to a single beam within a few dozen updates. Since the world model
+predicts the *entire* 64-way table, the expected reward under the policy,
+`sum_k pi(k|s) R̂[k]`, is available in closed form; its gradient is the exact softmax policy
+gradient, offset-invariant and zero-variance. This is a scoped deviation, not an abandonment:
+straight-through samples still drive the dynamics input of the RSSM and define the previous
+beam in the switching-cost indicator, and evaluation still acts greedily (`argmax pi`).
+
 ## 2. Regime labelling (transition boundaries)
 
 Current approach: flag a transition if |delta optimal-beam-index| exceeds a
