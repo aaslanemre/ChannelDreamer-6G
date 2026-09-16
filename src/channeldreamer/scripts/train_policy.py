@@ -65,9 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--eval-every", type=int, default=250)
     p.add_argument("--target", type=float, default=0.10, help="greedy imagined regret (dB) to reach on validation")
     p.add_argument("--confirm", type=int, default=2)
+    p.add_argument("--stop-on", choices=("target", "plateau"), default="target",
+                   help="'target': stop after --confirm consecutive evals at/below --target (Stage 2); "
+                        "'plateau': ignore the target and stop only when validation has not improved for --patience evals (Stage 3)")
     p.add_argument("--patience", type=int, default=20)
     p.add_argument("--val-rollouts", type=int, default=64, help="validation sequences used for imagined evaluation")
     p.add_argument("--no-predict-then-act", action="store_true")
+    p.add_argument("--init-actor", default=None, metavar="POLICY_PT",
+                   help="warm-start the actor (and critic) from a saved policy.pt, e.g. the converged c=0 policy of the same horizon "
+                        "(curriculum on the switching penalty; a cold start with c > 0 collapses to a few beams)")
     p.add_argument("--out", default="runs/policy")
     p.add_argument("--experiment", default=None,
                    help="name for results/<experiment>_*.json and figures/<experiment>_*.png (default: derived from --out)")
@@ -76,27 +82,56 @@ def build_parser() -> argparse.ArgumentParser:
 
 @torch.no_grad()
 def imagined_eval(trainer: ImaginedActorCritic, batches: list[dict[str, torch.Tensor]]) -> dict:
-    """Greedy / expected imagined regret against the model's table on fixed validation rollouts."""
+    """Validation rollouts: the actor's greedy behaviour against the model's table, with and without
+    the switching penalty, plus two reference policies computed on the same imagined trajectories:
+
+    * ``track``: choose the model's best beam at every step, paying every switch;
+    * ``hold``: keep the currently served beam for the whole rollout (no switches).
+
+    ``greedy_net_reward_db`` (actor, penalty included) is the objective; for ``c = 0`` it equals
+    ``track`` minus the table regret.  The state-dependence check asks how many rollout starts
+    the actor loses to the better of the two references by more than 0.5 dB.
+    """
     trainer.actor.eval()
-    per_start, greedy, expected, switch, ent = [], [], [], [], []
+    c = trainer.switching_penalty
+    acc = {k: [] for k in ("greedy_regret", "expected_regret", "switch", "entropy", "actor_net", "track_net", "hold_net", "actor_switch")}
+    per_gap, per_regret = [], []
     for batch in batches:
         start, prev = trainer.start_states(batch)
         roll = trainer.imagine_rollout(start, prev)
-        best = roll.reward_table.max(-1).values  # (B, H)
-        a_greedy = roll.logits.argmax(-1)  # (B, H)
-        g = best - roll.reward_table.gather(-1, a_greedy[..., None]).squeeze(-1)
-        greedy.append(g.flatten())
-        per_start.append(g.mean(1))
-        expected.append((best - roll.beam_reward).flatten())
-        switch.append(roll.switch.flatten())
-        ent.append(trainer.actor.entropy(roll.logits).flatten())
-    g_all, per = torch.cat(greedy), torch.cat(per_start)
+        table = roll.reward_table  # (B, H, A)
+        best_val, best_beam = table.max(-1)
+        prev0 = prev.argmax(-1)  # (B,)
+        a_g = roll.logits.argmax(-1)  # (B, H)
+        a_prev = torch.cat([prev0[:, None], a_g[:, :-1]], 1)
+        actor_val = table.gather(-1, a_g[..., None]).squeeze(-1)
+        actor_sw = (a_g != a_prev).float()
+        actor_net = actor_val - c * actor_sw
+        track_prev = torch.cat([prev0[:, None], best_beam[:, :-1]], 1)
+        track_net = best_val - c * (best_beam != track_prev).float()
+        hold_net = table.gather(-1, prev0[:, None, None].expand(-1, table.shape[1], 1)).squeeze(-1)
+        g = best_val - actor_val
+        acc["greedy_regret"].append(g.flatten())
+        per_regret.append(g.mean(1))
+        acc["expected_regret"].append((best_val - roll.beam_reward).flatten())
+        acc["switch"].append(roll.switch.flatten())
+        acc["actor_switch"].append(actor_sw.flatten())
+        acc["entropy"].append(trainer.actor.entropy(roll.logits).flatten())
+        acc["actor_net"].append(actor_net.flatten())
+        acc["track_net"].append(track_net.flatten())
+        acc["hold_net"].append(hold_net.flatten())
+        per_gap.append(torch.maximum(track_net.mean(1), hold_net.mean(1)) - actor_net.mean(1))
+    m = {k: torch.cat(v) for k, v in acc.items()}
+    per_gap, per_regret = torch.cat(per_gap), torch.cat(per_regret)
     trainer.actor.train()
     return {
-        "greedy_regret_db": float(g_all.mean()), "expected_regret_db": float(torch.cat(expected).mean()),
-        "switch_rate": float(torch.cat(switch).mean()), "entropy": float(torch.cat(ent).mean()),
-        "per_start_p50": float(per.quantile(0.5)), "per_start_p90": float(per.quantile(0.9)),
-        "per_start_max": float(per.max()), "frac_starts_over_0.5db": float((per > 0.5).float().mean()),
+        "greedy_regret_db": float(m["greedy_regret"].mean()), "expected_regret_db": float(m["expected_regret"].mean()),
+        "greedy_net_reward_db": float(m["actor_net"].mean()), "track_net_reward_db": float(m["track_net"].mean()),
+        "hold_net_reward_db": float(m["hold_net"].mean()), "greedy_switch_rate": float(m["actor_switch"].mean()),
+        "switch_rate": float(m["switch"].mean()), "entropy": float(m["entropy"].mean()),
+        "per_start_p50": float(per_regret.quantile(0.5)), "per_start_p90": float(per_regret.quantile(0.9)),
+        "per_start_max": float(per_regret.max()), "frac_starts_over_0.5db": float((per_regret > 0.5).float().mean()),
+        "gap_to_reference_p90": float(per_gap.quantile(0.9)), "frac_starts_gap_over_0.5db": float((per_gap > 0.5).float().mean()),
     }
 
 
@@ -118,6 +153,9 @@ def record_policy_run(exp: str, summary: dict) -> None:
     curve = [{"step": e["step"], "seconds": e["seconds"], "greedy_regret_db": e["val"]["greedy_regret_db"],
               "expected_regret_db": e["val"]["expected_regret_db"], "entropy": e["val"]["entropy"], "switch_rate": e["val"]["switch_rate"],
               "per_start_p90": e["val"]["per_start_p90"], "frac_starts_over_0.5db": e["val"]["frac_starts_over_0.5db"],
+              "greedy_net_reward_db": e["val"].get("greedy_net_reward_db"), "track_net_reward_db": e["val"].get("track_net_reward_db"),
+              "hold_net_reward_db": e["val"].get("hold_net_reward_db"), "greedy_switch_rate": e["val"].get("greedy_switch_rate"),
+              "frac_starts_gap_over_0.5db": e["val"].get("frac_starts_gap_over_0.5db"),
               "val_distinct_beams": e["val_distinct_beams"], "actor_loss": e["train"]["actor_loss"], "critic_loss": e["train"]["critic_loss"]}
              for e in summary["log"]]
     save_results(f"{exp}_imagined_regret", {
@@ -129,11 +167,17 @@ def record_policy_run(exp: str, summary: dict) -> None:
         "checks_passed": summary["checks_passed"], "curve": curve})
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
     st = [c["step"] for c in curve]
-    axes[0].plot(st, [c["greedy_regret_db"] for c in curve], marker="o", ms=3, label="greedy")
-    axes[0].plot(st, [c["expected_regret_db"] for c in curve], marker="o", ms=3, label="expected (stochastic policy)")
-    axes[0].axhline(hp["target"], color="k", ls="--", lw=1, label=f"target {hp['target']} dB")
+    if curve and curve[0].get("greedy_net_reward_db") is not None:
+        axes[0].plot(st, [c["greedy_net_reward_db"] for c in curve], marker="o", ms=3, label="actor (greedy), net reward")
+        axes[0].plot(st, [c["track_net_reward_db"] for c in curve], ls="--", color="k", alpha=0.7, label="track model's best beam")
+        axes[0].plot(st, [c["hold_net_reward_db"] for c in curve], ls=":", color="k", alpha=0.7, label="hold current beam")
+        axes[0].set_ylabel(f"imagined net reward, c={hp['switching_penalty']:g} dB")
+    else:
+        axes[0].plot(st, [c["greedy_regret_db"] for c in curve], marker="o", ms=3, label="greedy")
+        axes[0].plot(st, [c["expected_regret_db"] for c in curve], marker="o", ms=3, label="expected (stochastic policy)")
+        axes[0].axhline(hp["target"], color="k", ls="--", lw=1, label=f"target {hp['target']} dB")
+        axes[0].set_ylabel("imagined regret vs model table (dB)")
     axes[0].set_xlabel("actor-critic update")
-    axes[0].set_ylabel("imagined regret vs model table (dB)")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(fontsize=8)
     axes[0].set_title(f"{exp}: imagined regret (validation)")
@@ -223,12 +267,18 @@ def main(argv: list[str] | None = None) -> dict:
                                entropy_scale=args.entropy_scale, batch_size=args.batch)
     torch.manual_seed(cfg.seed)
     trainer = ImaginedActorCritic(wm, ac_cfg, switching_penalty=args.switching_penalty)
+    if args.init_actor:
+        init = torch.load(args.init_actor, map_location=dev, weights_only=False)["actor_critic"]
+        trainer.actor.load_state_dict(init["actor"])
+        trainer.critic.load_state_dict(init["critic"])
+        trainer.critic_ema.load_state_dict(init["critic_ema"])
+        print(f"[actor-critic] warm-started actor/critic from {args.init_actor} (trained at c={init['switching_penalty']:g})")
     print(f"[actor-critic] c={args.switching_penalty:g} dB, horizon {ac_cfg.imagination_horizon}, actor/critic lr {args.actor_lr:g}/{args.critic_lr:g}, "
           f"{args.batch}x{args.seq} rollout starts per update; stop at greedy imagined regret <= {args.target} dB on "
           f"{len(val_idx)} validation rollouts for {args.confirm} consecutive evals")
 
     # ------------------------------------------------------------- training loop
-    log, best, best_state, best_step, since_best, met, stop_reason = [], float("inf"), None, 0, 0, 0, "max_updates"
+    log, best, best_state, best_step, since_best, met, stop_reason = [], -float("inf"), None, 0, 0, 0, "max_updates"
     run = {}
     t0 = time.time()
     torch.cuda.reset_peak_memory_stats()
@@ -246,25 +296,28 @@ def main(argv: list[str] | None = None) -> dict:
             run = {}
             target = ev["greedy_regret_db"] <= args.target
             met = met + 1 if target else 0
-            improved = ev["greedy_regret_db"] < best - 1e-4
+            # score to maximise: the imagined objective (net reward incl. penalty) in plateau mode, -regret in target mode
+            score = ev["greedy_net_reward_db"] if args.stop_on == "plateau" else -ev["greedy_regret_db"]
+            improved = score > best + 1e-4
             if improved:
-                best, best_step, since_best = ev["greedy_regret_db"], step, 0
+                best, best_step, since_best = score, step, 0
                 best_state = copy.deepcopy(trainer.actor.state_dict())
             else:
                 since_best += 1
             print(f"upd {step:6d} ({entry['seconds']:4.0f}s) actor {entry['train']['actor_loss']:+.3f} critic {entry['train']['critic_loss']:.3f} | "
-                  f"val imagined regret greedy {ev['greedy_regret_db']:.3f} expected {ev['expected_regret_db']:.3f} dB, "
-                  f"p90/max per start {ev['per_start_p90']:.2f}/{ev['per_start_max']:.2f}, >0.5dB {100 * ev['frac_starts_over_0.5db']:.0f}%, "
-                  f"entropy {ev['entropy']:.2f}, switch {ev['switch_rate']:.2f}, distinct beams {beams}"
+                  f"val net reward greedy {ev['greedy_net_reward_db']:.3f} (track {ev['track_net_reward_db']:.3f}, hold {ev['hold_net_reward_db']:.3f}) | "
+                  f"table regret {ev['greedy_regret_db']:.3f} dB, gap>0.5dB {100 * ev['frac_starts_gap_over_0.5db']:.0f}% of starts, "
+                  f"entropy {ev['entropy']:.2f}, greedy switch {ev['greedy_switch_rate']:.2f}, distinct beams {beams}"
                   f"{' *' if improved else ''}{' TARGET' if target else ''}", flush=True)
-            if met >= args.confirm:
+            if args.stop_on == "target" and met >= args.confirm:
                 stop_reason = f"target met for {args.confirm} consecutive evaluations"
                 break
             if since_best >= args.patience:
                 stop_reason = f"validation plateau: no improvement for {args.patience} evaluations"
                 break
     peak = torch.cuda.max_memory_allocated() / 2**20
-    print(f"[done] {stop_reason}; best validation greedy imagined regret {best:.3f} dB at update {best_step}; peak GPU {peak:.0f} MB")
+    print(f"[done] {stop_reason}; best validation score ({'net reward' if args.stop_on == 'plateau' else '-regret'}) {best:.3f} dB "
+          f"at update {best_step}; peak GPU {peak:.0f} MB")
     trainer.actor.load_state_dict(best_state)
 
     # ------------------------------------------------------------- checks before test
@@ -274,8 +327,10 @@ def main(argv: list[str] | None = None) -> dict:
               "val_imagined": ev}
     print("\n=== Checks on validation (best actor) ===")
     print(f"distinct beams chosen on {len(W['val'])} validation windows: {checks['val_distinct_beams']} (truly optimal: {checks['val_distinct_optimal']})")
-    print(f"greedy imagined regret {ev['greedy_regret_db']:.3f} dB; per-rollout-start mean regret p50 {ev['per_start_p50']:.3f} "
-          f"p90 {ev['per_start_p90']:.3f} max {ev['per_start_max']:.3f} dB; starts over 0.5 dB: {100 * ev['frac_starts_over_0.5db']:.1f}%")
+    print(f"greedy imagined net reward {ev['greedy_net_reward_db']:.3f} dB vs references: track-best-beam {ev['track_net_reward_db']:.3f}, "
+          f"hold-current-beam {ev['hold_net_reward_db']:.3f} dB (c={args.switching_penalty:g}); table regret {ev['greedy_regret_db']:.3f} dB")
+    print(f"per-rollout-start: table regret p50 {ev['per_start_p50']:.3f} p90 {ev['per_start_p90']:.3f} max {ev['per_start_max']:.3f} dB; "
+          f"gap to the better reference p90 {ev['gap_to_reference_p90']:.3f} dB, starts losing > 0.5 dB to it: {100 * ev['frac_starts_gap_over_0.5db']:.1f}%")
     # spot check: three individual rollouts
     with torch.no_grad():
         start, prev = trainer.start_states(val_batches[0])
@@ -289,8 +344,8 @@ def main(argv: list[str] | None = None) -> dict:
         print(f"rollout start {i}: current beam {int(prev[i].argmax())}\n   chosen     {chosen[i].tolist()}\n   model best {best_beam[i].tolist()}"
               f"\n   regret dB  {[round(x, 2) for x in reg[i].tolist()]}")
     checks["spot_rollouts"] = spot
-    passed = checks["val_distinct_beams"] >= 10 and ev["frac_starts_over_0.5db"] < 0.10
-    print(f"checks {'PASSED' if passed else 'FAILED'} (need >= 10 distinct beams and < 10% of starts over 0.5 dB)")
+    passed = checks["val_distinct_beams"] >= 10 and ev["frac_starts_gap_over_0.5db"] < 0.10
+    print(f"checks {'PASSED' if passed else 'FAILED'} (need >= 10 distinct beams and < 10% of starts losing > 0.5 dB to the better reference policy)")
 
     # ------------------------------------------------------------- final held-out comparison
     results, rewards = {}, {}
@@ -324,7 +379,8 @@ def main(argv: list[str] | None = None) -> dict:
                "hyperparameters": {"switching_penalty": args.switching_penalty, "imagination_horizon": args.imagination_horizon,
                                    "actor_lr": args.actor_lr, "critic_lr": args.critic_lr, "entropy_scale": args.entropy_scale,
                                    "batch": args.batch, "seq": args.seq, "target": args.target, "confirm": args.confirm,
-                                   "patience": args.patience, "gamma": ac_cfg.gamma, "lambda": ac_cfg.lambda_},
+                                   "patience": args.patience, "stop_on": args.stop_on, "init_actor": args.init_actor,
+                                   "gamma": ac_cfg.gamma, "lambda": ac_cfg.lambda_},
                "split": {"fit_segments": fit_segs.tolist(), "val_segments": val_segs.tolist(), "test_segments": test_segs.tolist(),
                          "n_val_windows": len(W["val"]), "n_test_windows": len(W["test"]), "n_test_transition": int((R["test"] == 1).sum())},
                "distinct_beams_test": {n: int(len(np.unique(s.argmax(1)))) for n, s in scores.items()} if passed else {},
