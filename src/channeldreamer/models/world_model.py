@@ -311,13 +311,24 @@ class WorldModel(nn.Module):
         post, _, _ = self.observe(batch, deterministic=True)
         return post[:, -1]
 
-    @torch.no_grad()
-    def predict_reward_table(self, state: State) -> torch.Tensor:
-        """Reward table in dB (symexp of the head) for the given state(s)."""
+    def reward_table(self, state: State) -> torch.Tensor:
+        """Differentiable reward table in dB (symexp of the head) for the given state(s).
+
+        This is the variant the Phase-4 actor-critic must use on *imagined* states: gradients
+        flow from the predicted reward back through the rollout into the policy that chose the
+        actions (and into the RSSM/head, which the actor update should detach or freeze).
+        ``predict_reward_table`` wraps this in ``no_grad`` for inference; using that wrapper in
+        an actor objective would silently zero every actor gradient.
+        """
         from .encoders import symexp
 
         with self._autocast():
             return symexp(self.reward_head(state.feat()).float())
+
+    @torch.no_grad()
+    def predict_reward_table(self, state: State) -> torch.Tensor:
+        """Inference-only reward table (no gradients); see ``reward_table`` for training use."""
+        return self.reward_table(state)
 
     @torch.no_grad()
     def predict_scores(self, windows: WindowedDataset, batch_size: int = 256,

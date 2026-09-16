@@ -159,6 +159,62 @@ def test_world_model_loss_backward_synthetic():
     assert wm.encode_history(batch).deter.shape == (4, 64)
 
 
+def test_imagined_rollout_reward_gradients_reach_actor_and_rssm():
+    """Regression test for a silent zero-gradient bug: ``predict_reward_table`` is ``no_grad`` (for
+    inference), so an actor objective built on it would receive exactly zero gradient.  The
+    Phase-4 actor-critic must use the differentiable ``reward_table`` instead.  The reward head's
+    output layer is zero-initialised (DreamerV3 convention), which also gives zero actor gradient
+    by degenerate coincidence, so the world model is trained for a few steps first."""
+    torch.manual_seed(0)
+    cfg = _small_rssm()
+    wm = WorldModel(cfg, EncoderConfig(**SMALL_ENC, modalities=("power",)))
+    assert torch.all(wm.reward_head[-1].weight == 0)  # zero init: reward table constant across beams
+    batch = {"power_db": torch.randn(4, 6, 64)}
+    opt = torch.optim.Adam(wm.parameters(), lr=1e-2)
+    for _ in range(3):
+        loss, _ = wm.loss(batch)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    assert torch.any(wm.reward_head[-1].weight != 0)  # head un-frozen / non-degenerate
+    wm.zero_grad(set_to_none=True)
+
+    start = wm.encode_history(batch)  # no_grad by design: the policy input, not a trainable path
+    actor = torch.nn.Linear(cfg.feat_dim, cfg.action_dim)
+
+    def policy(feat: torch.Tensor) -> torch.Tensor:  # straight-through one-hot beam choice
+        probs = actor(feat).softmax(-1)
+        one_hot = torch.nn.functional.one_hot(probs.argmax(-1), cfg.action_dim).float()
+        return one_hot + probs - probs.detach()
+
+    horizon = 5
+    img, acts = wm.rssm.imagine(start, horizon, policy=policy)
+    assert img.deter.shape == (4, horizon, cfg.deter_dim) and acts.shape == (4, horizon, cfg.action_dim)
+
+    # inference wrapper unchanged: same values, no graph
+    rew_inf = wm.predict_reward_table(img)
+    rew = wm.reward_table(img)
+    assert rew_inf.requires_grad is False and rew.requires_grad is True
+    assert torch.allclose(rew_inf, rew.detach())
+    assert rew.shape == (4, horizon, cfg.reward_dim) and torch.isfinite(rew).all()
+
+    # imagined return of the chosen beams -> gradients to the actor and to every RSSM parameter on
+    # the imagination path (img_in, GRU, prior net).  The posterior net is only used by observe();
+    # an imagined rollout runs the prior, so it correctly receives no gradient here.
+    objective = -(rew * acts).sum(-1).mean()
+    objective.backward()
+    assert actor.weight.grad is not None and torch.isfinite(actor.weight.grad).all()
+    assert torch.any(actor.weight.grad != 0)
+    on_path = {n: p for n, p in wm.rssm.named_parameters() if not n.startswith("post_net.")}
+    assert on_path and all(n.startswith(("img_in.", "gru.", "prior_net.")) for n in on_path), list(on_path)
+    missing = [n for n, p in on_path.items() if p.grad is None or not torch.any(p.grad != 0)]
+    assert not missing, f"RSSM parameters without gradient from the imagined objective: {missing}"
+    assert all(torch.isfinite(p.grad).all() for p in on_path.values())
+    assert all(p.grad is None for n, p in wm.rssm.named_parameters() if n.startswith("post_net."))
+    # the no_grad wrapper really would have zeroed the actor: nothing to backprop through
+    assert wm.predict_reward_table(img).grad_fn is None
+
+
 def test_world_model_without_actions():
     cfg = _small_rssm(action_dim=0)
     wm = WorldModel(cfg, EncoderConfig(**SMALL_ENC, modalities=("power",)))
