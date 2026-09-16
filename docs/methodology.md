@@ -50,7 +50,7 @@ next-observation depends only on user motion, not on the agent's action — a
 world model learned by plain sequence prediction is therefore a valid dynamics
 model, and the policy only optimizes the reward stream.
 
-Open question for advisors: is the exogeneity assumption acceptable, or does
+Open question for the advisor: is the exogeneity assumption acceptable, or does
 handover (which could change which BS serves the user) break it?
 
 ## 2. Regime labelling (transition boundaries)

@@ -181,7 +181,7 @@ was measured. Mitigating property: the 64-beam power vector makes the reward
 for EVERY candidate beam fully observed at each step (not just the logged
 one), and beam choice does not influence user trajectory, so transitions are
 exogenous — a world model trained by plain sequence prediction is a valid
-dynamics model. Open question for advisors: does exogeneity hold under
+dynamics model. Open question for the advisor: does exogeneity hold under
 handover, where beam/BS choice could plausibly affect future observations?
 
 **R5.** The central hypothesis might not hold. Stated in advance; a
