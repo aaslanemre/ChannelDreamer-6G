@@ -40,6 +40,25 @@ typical adjacent-beam power gap turns "never switch" into the trivially optimal 
 stable segments. It also argues for evaluating switching cost against the *transition* regime
 separately, where regret is 0.43 dB and the trade-off is genuinely non-trivial.
 
+## 0.1 GPU memory budget for training (Phase 3 profiling)
+
+Measured on the lab RTX 4070 (12 GB) with `python -m channeldreamer.scripts.profile_components`
+(each component in isolation, peak stats reset between stages, then everything combined in one
+forward + backward pass on a real Scenario 33 batch of B = 8, T = 8). The full Phase-3 stack —
+camera projection, LiDAR encoder, GPS/trajectory encoder, power encoder and the RSSM — uses
+well under 1 GB combined when the camera and LiDAR features come from the offline cache
+(`data/scenario33/cache`, built by `prepare_data --pretokenize-lidar --precompute-camera`):
+about 0.1 GB for the combined forward + backward pass, 0.12 GB with AdamW state. See the
+script for the per-component breakdown.
+
+**Rule for Phase 4: training must always use the cached feature path, never raw images through
+the ResNet backbone at train time.** Feeding raw images costs roughly 4x more (0.36 GB vs
+0.10 GB at B = 8, T = 8, and ~0.5 GB reserved), and since activation memory scales with B x T
+the raw path would not fit a realistic Phase-4 batch such as B = 64, T = 32 (32x the profiled
+size, i.e. on the order of 10 GB before the actor-critic) in 12 GB of VRAM, whereas the cached
+path at that size stays around 3 GB and leaves ample headroom for the actor and critic. The
+backbone is frozen anyway, so caching loses nothing.
+
 ## 1. The offline RL formulation (risk R4, the big one)
 
 DeepSense is a recorded dataset, not an interactive simulator. Two properties
