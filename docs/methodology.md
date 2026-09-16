@@ -292,3 +292,38 @@ state reproduces the observed table with 0.15 dB regret (per-beam RMSE 0.74 dB, 
 1.35), and the greedy policy uses 49 distinct beams over the test set (truly optimal: 54).
 This checkpoint (`runs/world_model/checkpoint.pt`, gitignored) is the frozen world model for
 Phase 4.
+
+## 8. Stage 2 result: actor-critic (c = 0) on the frozen world model
+
+Full record in `docs/experiments.md` (Stage 2) and `results/stage2_c0_run2_*.json`. Setup and
+stopping discipline as in Section 7: the actor-critic of Section 6 is trained on the frozen
+19k-step world model with the imagined regret against the model's own reward table monitored on
+validation rollouts, and the held-out test segments are evaluated once, with the same four
+methods and split as the Stage-1 table.
+
+Two runs were needed. With the DreamerV3-style defaults (`actor_lr = 3e-4`, `entropy_scale =
+3e-4`) the policy plateaued at 0.15 dB imagined regret and used only 11-13 of the 64 beams: the
+exact softmax policy gradient of Section 6.1 is proportional to the probability of a beam, so
+once a beam is no longer selected it cannot be rediscovered, and a weak entropy bonus lets the
+policy quantise to a coarse set of "hub" beams (adjacent to the model's best beam, hence a low
+*imagined* regret, but a real regret worse than the model's own argmax). A ten-fold larger
+entropy bonus and learning rate (`3e-3`, `1e-3`) reached 0.056 dB in 750 updates with 21
+distinct beams and passed both pre-test checks (collapse: 21 beams on validation; state
+dependence: 0.1 % of rollout starts above 0.5 dB mean regret).
+
+Held-out power loss (dB): reactive 0.18 / 0.43, predict-then-act 0.12 / 0.46, world-model
+greedy one-step 0.15 / 0.42, actor-critic (c = 0) 0.15 / 0.53 (stable / transition).
+
+**Reading.** At zero switching cost the decision layer is, by construction, trying to reproduce
+the world model's greedy one-step beam, and it does so on stable windows (tie at 0.15 dB) while
+losing 0.11 dB at transitions and using far fewer distinct beams (22 vs 49 on test). So the
+first genuine test of the central hypothesis is negative at this stage: the actor-critic shows
+no advantage over prediction alone, and its transition-regime loss is the *worst* of the four
+methods. This is not yet the switching-cost setting in which a proactive policy could pay off
+(Section 0(c)); it is the ablation that shows the policy machinery is at best neutral. Two
+caveats limit the conclusion: (1) the stopping rule fired on the first crossings of the 0.10 dB
+target while regret, beam count and entropy were still improving steeply, so the policy is
+target-converged rather than plateau-converged; (2) 90 transition windows give roughly
++/-0.1 dB resolution. Stage 3 (switching-cost and horizon sweep) should therefore use a
+plateau-based stop and keep reporting the world-model greedy policy alongside, since the
+hypothesis now has a concrete bar to clear: beat 0.42 dB at transitions.

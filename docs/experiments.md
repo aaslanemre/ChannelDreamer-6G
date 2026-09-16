@@ -43,4 +43,47 @@ the best beam at `t + 1` (0 = perfect), reported per regime.
 
 ## Stage 2 - actor-critic at c = 0 on the frozen world model
 
-*(pending: entry is added when `results/stage2_*.json` exist)*
+- **What:** `python -m channeldreamer.scripts.train_policy --wm-checkpoint runs/world_model/checkpoint.pt
+  --switching-penalty 0 --imagination-horizon 15 --target 0.10`. Actor + critic on the frozen
+  19k-step world model, 256 rollout starts per update, horizon 15. Stopping metric: greedy
+  imagined regret against the model's own reward table on 64 fixed validation rollouts;
+  target 0.10 dB (below the world model's 0.15 dB held-out error, so the actor's suboptimality
+  cannot be the limiting factor); stop after two consecutive evaluations at or below target,
+  or on a 20-evaluation plateau.
+- **Run 1** (`actor_lr = 3e-4`, `entropy_scale = 3e-4`): plateaued at 0.148 dB (best at update
+  14750 of 19750, 8 min) without reaching the target. Checks passed formally (13 distinct beams
+  on validation, 2.7 % of rollout starts over 0.5 dB) but the policy was coarse: only 11 of 64
+  beams ever received more than 1 % probability, and it agreed with the world model's greedy
+  beam on just 16 % of validation windows, typically choosing an adjacent beam. Held-out:
+  0.19 dB stable / 0.55 dB transition - worse than the world model's greedy one-step policy
+  (0.15 / 0.42) on both regimes. Diagnosis: the exact softmax policy gradient is proportional
+  to the probability of a beam, so beams the policy stops selecting can no longer be
+  rediscovered (vanishing gradient), and the entropy bonus was too weak to prevent it.
+  Files: `results/stage2_c0_imagined_regret.json`, `figures/stage2_c0_imagined_regret.png`,
+  `results/stage2_c0_final_comparison.json`, `figures/stage2_c0_final_comparison.png`.
+- **Run 2** (`actor_lr = 1e-3`, `entropy_scale = 3e-3`, everything else identical): target met
+  at updates 500 and 750 (21 s), best greedy imagined regret 0.056 dB; 21 distinct beams on
+  validation, 0.1 % of starts over 0.5 dB. **This is the Stage-2 result.** Held-out test, power
+  loss in dB (same split and baselines as Stage 1):
+
+  | method | stable | transition | overall | distinct beams |
+  |---|---|---|---|---|
+  | reactive | 0.18 | 0.43 | 0.20 | 54 |
+  | predict-then-act | 0.12 | 0.46 | 0.15 | 55 |
+  | world model, greedy one-step | 0.15 | 0.42 | 0.18 | 49 |
+  | actor-critic, c = 0 | 0.15 | 0.53 | 0.19 | 22 |
+
+- **Headline (honest):** at c = 0 the decision layer adds nothing beyond the world model's own
+  one-step prediction. It ties the world-model greedy policy on stable windows (0.15 dB) and
+  is *worse* at transitions (0.53 vs 0.42 dB; 90 windows), i.e. the opposite of the central
+  hypothesis at this stage. Net MDP reward at zero penalty: reactive -3.695, predict-then-act
+  -3.645, world-model greedy -3.668, actor-critic -3.680 dB.
+- **Caveat on the stopping rule:** the two-consecutive-crossings rule stopped run 2 while the
+  imagined regret (0.103 -> 0.079 -> 0.056), the distinct-beam count (14 -> 17 -> 21) and the
+  entropy were all still changing steeply (see the figure). The policy is therefore converged
+  *to the target*, not to a plateau; with 22 distinct beams on test against 49 for the greedy
+  world-model policy it still discards resolution the model has. Stage 3 should require a
+  plateau (or a tighter target, e.g. 0.03 dB) before evaluation.
+- **Files:** `results/stage2_c0_run2_imagined_regret.json`, `figures/stage2_c0_run2_imagined_regret.png`,
+  `results/stage2_c0_run2_final_comparison.json`, `figures/stage2_c0_run2_final_comparison.png`.
+  Checkpoint: `runs/policy_c0_run2/policy.pt`. Write-up: `docs/methodology.md` §8.
