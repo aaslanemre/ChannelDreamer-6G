@@ -29,6 +29,7 @@ dev = ["pytest", "ruff", "black", "ipykernel"]
 cd-train-baseline = "channeldreamer.scripts.train_baseline:main"
 cd-prepare-data = "channeldreamer.scripts.prepare_data:main"
 cd-evaluate = "channeldreamer.scripts.evaluate:main"
+cd-train-actor-critic = "channeldreamer.scripts.train_actor_critic:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
