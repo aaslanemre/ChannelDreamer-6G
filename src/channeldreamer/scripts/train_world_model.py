@@ -28,7 +28,7 @@ from ..eval import compute_metrics, label_regimes, regime_for_windows
 from ..models import ReactiveBaseline
 from ..models.encoders import EncoderConfig, count_parameters
 from ..models.world_model import RSSMConfig, WorldModel, make_sequence_batch
-from ..utils import load_config, seed_everything
+from ..utils import load_config, plot_regret_curve, save_figure, save_results, seed_everything
 from .train_actor_critic import DEFAULT_CONFIG, window_side_arrays
 
 
@@ -50,6 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--deter-dim", type=int, default=256)
     p.add_argument("--action-conditioned", action="store_true", help="ablation only (see rl.actor_critic)")
     p.add_argument("--out", default="runs/world_model")
+    p.add_argument("--experiment", default=None, help="name for results/<experiment>.json and figures/<experiment>.png")
     return p
 
 
@@ -162,6 +163,18 @@ def main(argv: list[str] | None = None) -> dict:
     with open(out / "train_log.json", "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     print(f"[saved] {out / 'checkpoint.pt'} (best validation) and {out / 'train_log.json'}")
+    if args.experiment:
+        curve = [{"step": e["step"], "seconds": e["seconds"], "loss": e["loss"]["loss"], "recon": e["loss"]["recon"], "kl": e["loss"]["kl"],
+                  "val_stable": e["val"]["stable"], "val_transition": e["val"]["transition"], "val_overall": e["val"]["overall"],
+                  "stable": e["test"]["stable"], "transition": e["test"]["transition"], "overall": e["test"]["overall"]} for e in log]
+        save_results(args.experiment, {"description": "World-model greedy one-step regret vs step ('stable'/'transition' = held-out test, "
+                                       "'val_*' = validation used for stopping)", "checkpoint": str(out / "checkpoint.pt"),
+                                       "split": {"fit_segments": fit_segs.tolist(), "val_segments": val_segs.tolist(), "test_segments": test_segs.tolist()},
+                                       "hyperparameters": vars(args), "reactive": reactive, "stop_reason": stop_reason, "best_step": best_step,
+                                       "peak_gpu_mb": peak, "curve": curve})
+        save_figure(args.experiment, plot_regret_curve(curve, reactive["test"], f"{args.experiment}: greedy one-step regret (held-out test)",
+                                                       xlabel="world-model training step"))
+        print(f"[results] results/{args.experiment}.json, figures/{args.experiment}.png")
     return summary
 
 

@@ -1,0 +1,178 @@
+{
+  "timestamp": "2026-09-16T18:11:44+00:00",
+  "git_commit": "e9c26ac-dirty",
+  "description": "Phase-1 baselines, regime-decomposed, held-out test segments of Scenario 33",
+  "split": {
+    "history": 8,
+    "horizon": 1,
+    "test_fraction": 0.25,
+    "seed": 0,
+    "train_segments": [
+      0,
+      1,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      11,
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "test_segments": [
+      2,
+      3,
+      10,
+      12
+    ],
+    "n_test_windows": 937,
+    "n_test_transition": 90,
+    "val_segments": [
+      11,
+      15
+    ]
+  },
+  "predict_then_act_config": {
+    "d_model": 64,
+    "n_heads": 4,
+    "n_layers": 2,
+    "dim_feedforward": 128,
+    "dropout": 0.1,
+    "loss": "power",
+    "target_temperature": 1.0,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "epochs": 40,
+    "batch_size": 256,
+    "val_fraction": 0.1,
+    "patience": 8
+  },
+  "metrics": {
+    "reactive": {
+      "overall": {
+        "n": 937,
+        "top1": 0.4087513340448239,
+        "top3": 0.7331910352187834,
+        "top5": 0.855923159018143,
+        "power_loss_db_mean": 0.20264566279056864,
+        "power_loss_db_median": 0.03630227210104093,
+        "power_loss_db_p90": 0.5747998072786897
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.4427390791027155,
+        "top3": 0.7839433293978748,
+        "top5": 0.911452184179457,
+        "power_loss_db_mean": 0.17802998649444834,
+        "power_loss_db_median": 0.023199470482653185,
+        "power_loss_db_p90": 0.4996956437486286
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.08888888888888889,
+        "top3": 0.25555555555555554,
+        "top5": 0.3333333333333333,
+        "power_loss_db_mean": 0.4343065274885009,
+        "power_loss_db_median": 0.3080492278535288,
+        "power_loss_db_p90": 0.8785115896374622
+      }
+    },
+    "markov": {
+      "overall": {
+        "n": 937,
+        "top1": 0.4215581643543223,
+        "top3": 0.7107790821771611,
+        "top5": 0.8185699039487727,
+        "power_loss_db_mean": 0.2195205888956315,
+        "power_loss_db_median": 0.03604545434485487,
+        "power_loss_db_p90": 0.627087550802994
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.4557260920897285,
+        "top3": 0.7626918536009445,
+        "top5": 0.8689492325855962,
+        "power_loss_db_mean": 0.1952689914391054,
+        "power_loss_db_median": 0.017799616220689832,
+        "power_loss_db_p90": 0.5665801355625445
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.1,
+        "top3": 0.2222222222222222,
+        "top5": 0.34444444444444444,
+        "power_loss_db_mean": 0.4477550671809383,
+        "power_loss_db_median": 0.31388375695690485,
+        "power_loss_db_p90": 0.8785115896374622
+      }
+    },
+    "predict-then-act": {
+      "overall": {
+        "n": 937,
+        "top1": 0.41728922091782283,
+        "top3": 0.7694770544290288,
+        "top5": 0.8954108858057631,
+        "power_loss_db_mean": 0.15326772138909434,
+        "power_loss_db_median": 0.0327190859159559,
+        "power_loss_db_p90": 0.43817202345547396
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.4510035419126328,
+        "top3": 0.820543093270366,
+        "top5": 0.9409681227863046,
+        "power_loss_db_mean": 0.1203293984665786,
+        "power_loss_db_median": 0.020696326120713347,
+        "power_loss_db_p90": 0.34670718998080463
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.1,
+        "top3": 0.28888888888888886,
+        "top5": 0.4666666666666667,
+        "power_loss_db_mean": 0.46325393822654776,
+        "power_loss_db_median": 0.26794309305159425,
+        "power_loss_db_p90": 1.0703240178306586
+      }
+    },
+    "oracle": {
+      "overall": {
+        "n": 937,
+        "top1": 1.0,
+        "top3": 1.0,
+        "top5": 1.0,
+        "power_loss_db_mean": 0.0,
+        "power_loss_db_median": 0.0,
+        "power_loss_db_p90": 0.0
+      },
+      "stable": {
+        "n": 847,
+        "top1": 1.0,
+        "top3": 1.0,
+        "top5": 1.0,
+        "power_loss_db_mean": 0.0,
+        "power_loss_db_median": 0.0,
+        "power_loss_db_p90": 0.0
+      },
+      "transition": {
+        "n": 90,
+        "top1": 1.0,
+        "top3": 1.0,
+        "top5": 1.0,
+        "power_loss_db_mean": 0.0,
+        "power_loss_db_median": 0.0,
+        "power_loss_db_p90": 0.0
+      }
+    }
+  },
+  "distinct_beams": {
+    "reactive": 54,
+    "markov": 33,
+    "predict-then-act": 55,
+    "oracle": 54
+  }
+}

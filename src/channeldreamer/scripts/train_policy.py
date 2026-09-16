@@ -41,7 +41,7 @@ from ..models import PredictThenActBaseline, ReactiveBaseline
 from ..models.encoders import EncoderConfig
 from ..models.world_model import RSSMConfig, WorldModel, make_sequence_batch
 from ..rl import ActorCriticConfig, ImaginedActorCritic
-from ..utils import load_config, seed_everything
+from ..utils import load_config, plot_regime_bars, plot_regret_curve, save_figure, save_results, seed_everything
 from .train_actor_critic import DEFAULT_CONFIG, _Scorer, window_side_arrays
 
 
@@ -50,7 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--data-root", default="data")
     p.add_argument("--scenario", default="33")
     p.add_argument("--config", default=str(DEFAULT_CONFIG))
-    p.add_argument("--wm-checkpoint", required=True)
+    p.add_argument("--wm-checkpoint", default=None)
+    p.add_argument("--record-only", default=None, metavar="RUN_DIR",
+                   help="do not train: write results/ and figures/ from RUN_DIR/summary.json (runs that predate the recording code)")
     p.add_argument("--val-segments", type=int, default=2)
     p.add_argument("--switching-penalty", type=float, default=0.0)
     p.add_argument("--imagination-horizon", type=int, default=15)
@@ -67,6 +69,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--val-rollouts", type=int, default=64, help="validation sequences used for imagined evaluation")
     p.add_argument("--no-predict-then-act", action="store_true")
     p.add_argument("--out", default="runs/policy")
+    p.add_argument("--experiment", default=None,
+                   help="name for results/<experiment>_*.json and figures/<experiment>_*.png (default: derived from --out)")
     return p
 
 
@@ -96,8 +100,77 @@ def imagined_eval(trainer: ImaginedActorCritic, batches: list[dict[str, torch.Te
     }
 
 
+def record_policy_run(exp: str, summary: dict) -> None:
+    """Persist a run's regret curve, checks and (if the checks passed) the held-out table under
+    ``results/<exp>_*.json`` and ``figures/<exp>_*.png``.  Works from ``summary.json`` alone."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    a = summary["args"]
+    hp = summary.get("hyperparameters") or {k: a[k] for k in ("switching_penalty", "imagination_horizon", "actor_lr", "critic_lr",
+                                                                "entropy_scale", "batch", "seq", "target", "confirm", "patience")}
+    split = summary.get("split") or {"val_segments": summary.get("val_segments"), "test_segments": summary.get("test_segments")}
+    summary.setdefault("policy_checkpoint", str(Path(a["out"]) / "policy.pt"))
+    summary.setdefault("distinct_beams_test", {})
+    summary.setdefault("distinct_optimal_beams_test", None)
+    curve = [{"step": e["step"], "seconds": e["seconds"], "greedy_regret_db": e["val"]["greedy_regret_db"],
+              "expected_regret_db": e["val"]["expected_regret_db"], "entropy": e["val"]["entropy"], "switch_rate": e["val"]["switch_rate"],
+              "per_start_p90": e["val"]["per_start_p90"], "frac_starts_over_0.5db": e["val"]["frac_starts_over_0.5db"],
+              "val_distinct_beams": e["val_distinct_beams"], "actor_loss": e["train"]["actor_loss"], "critic_loss": e["train"]["critic_loss"]}
+             for e in summary["log"]]
+    save_results(f"{exp}_imagined_regret", {
+        "description": "Actor-critic on the frozen world model: greedy/expected imagined regret against the model's reward table on "
+                       "validation rollouts vs update, with collapse (distinct beams) and state-dependence (per-start spread) checks",
+        "world_model_checkpoint": summary["args"]["wm_checkpoint"], "world_model_step": summary["wm_step"],
+        "policy_checkpoint": summary["policy_checkpoint"], "split": split, "hyperparameters": hp, "stop_reason": summary["stop_reason"],
+        "best_step": summary["best_step"], "peak_gpu_mb": summary["peak_gpu_mb"], "checks": summary["checks"],
+        "checks_passed": summary["checks_passed"], "curve": curve})
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8))
+    st = [c["step"] for c in curve]
+    axes[0].plot(st, [c["greedy_regret_db"] for c in curve], marker="o", ms=3, label="greedy")
+    axes[0].plot(st, [c["expected_regret_db"] for c in curve], marker="o", ms=3, label="expected (stochastic policy)")
+    axes[0].axhline(hp["target"], color="k", ls="--", lw=1, label=f"target {hp['target']} dB")
+    axes[0].set_xlabel("actor-critic update")
+    axes[0].set_ylabel("imagined regret vs model table (dB)")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(fontsize=8)
+    axes[0].set_title(f"{exp}: imagined regret (validation)")
+    axes[1].plot(st, [c["val_distinct_beams"] for c in curve], marker="o", ms=3, color="#2ca02c", label="distinct beams (val windows)")
+    axes[1].set_xlabel("actor-critic update")
+    axes[1].set_ylabel("distinct beams")
+    axes[1].grid(True, alpha=0.3)
+    ax2 = axes[1].twinx()
+    ax2.plot(st, [c["entropy"] for c in curve], color="#9467bd", label="policy entropy (nats)")
+    ax2.set_ylabel("entropy (nats)")
+    h1, l1 = axes[1].get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    axes[1].legend(h1 + h2, l1 + l2, fontsize=8)
+    axes[1].set_title("collapse check")
+    fig.tight_layout()
+    save_figure(f"{exp}_imagined_regret", fig)
+    if summary["checks_passed"] and summary["test_metrics"]:
+        results = summary["test_metrics"]
+        table = {n: {r: results[n][r]["power_loss_db_mean"] for r in ("stable", "transition", "overall")} for n in results}
+        save_results(f"{exp}_final_comparison", {
+            "description": "Held-out test segments: power loss (dB) by regime for reactive, predict-then-act, world-model greedy and "
+                           "the actor-critic; same split as stage1_final_comparison",
+            "world_model_checkpoint": summary["args"]["wm_checkpoint"], "policy_checkpoint": summary["policy_checkpoint"],
+            "split": split, "hyperparameters": hp, "metrics": results, "power_loss_db": table, "mdp_rewards": summary["test_rewards"],
+            "distinct_beams_test": summary["distinct_beams_test"], "distinct_optimal_beams_test": summary["distinct_optimal_beams_test"]})
+        save_figure(f"{exp}_final_comparison", plot_regime_bars(table, f"{exp}: held-out power loss by regime"))
+    print(f"[results] results/{exp}_*.json, figures/{exp}_*.png")
+
+
 def main(argv: list[str] | None = None) -> dict:
     args = build_parser().parse_args(argv)
+    if not args.record_only and not args.wm_checkpoint:
+        raise SystemExit("--wm-checkpoint is required unless --record-only is given")
+    if args.record_only:
+        summary = json.load(open(Path(args.record_only) / "summary.json"))
+        record_policy_run(args.experiment or Path(args.record_only).name, summary)
+        return summary
     cfg = load_config(args.config, [])
     seed_everything(cfg.seed)
     dev = torch.device("cuda")
@@ -247,11 +320,21 @@ def main(argv: list[str] | None = None) -> dict:
 
     summary = {"args": vars(args), "wm_step": ck.get("step"), "log": log, "best_step": best_step, "best_val_greedy_regret": best,
                "stop_reason": stop_reason, "peak_gpu_mb": peak, "checks": checks, "checks_passed": passed,
-               "test_metrics": results, "test_rewards": rewards, "val_segments": val_segs.tolist(), "test_segments": test_segs.tolist()}
+               "test_metrics": results, "test_rewards": rewards, "policy_checkpoint": str(out / "policy.pt"),
+               "hyperparameters": {"switching_penalty": args.switching_penalty, "imagination_horizon": args.imagination_horizon,
+                                   "actor_lr": args.actor_lr, "critic_lr": args.critic_lr, "entropy_scale": args.entropy_scale,
+                                   "batch": args.batch, "seq": args.seq, "target": args.target, "confirm": args.confirm,
+                                   "patience": args.patience, "gamma": ac_cfg.gamma, "lambda": ac_cfg.lambda_},
+               "split": {"fit_segments": fit_segs.tolist(), "val_segments": val_segs.tolist(), "test_segments": test_segs.tolist(),
+                         "n_val_windows": len(W["val"]), "n_test_windows": len(W["test"]), "n_test_transition": int((R["test"] == 1).sum())},
+               "distinct_beams_test": {n: int(len(np.unique(s.argmax(1)))) for n, s in scores.items()} if passed else {},
+               "distinct_optimal_beams_test": int(len(np.unique(W["test"].target_beam)))}
     with open(out / "summary.json", "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2)
     torch.save({"actor_critic": trainer.state_dict(), "wm_checkpoint": args.wm_checkpoint}, out / "policy.pt")
     print(f"\n[saved] {out / 'summary.json'} and {out / 'policy.pt'}")
+
+    record_policy_run(args.experiment or out.name, summary)
     return summary
 
 

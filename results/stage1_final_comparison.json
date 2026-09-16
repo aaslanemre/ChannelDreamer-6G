@@ -1,0 +1,153 @@
+{
+  "timestamp": "2026-09-16T18:11:47+00:00",
+  "git_commit": "e9c26ac-dirty",
+  "description": "Held-out test segments: reactive vs predict-then-act vs world-model greedy one-step (power loss dB by regime)",
+  "checkpoint": "runs/world_model/checkpoint.pt",
+  "world_model_step": 19000,
+  "split": {
+    "history": 8,
+    "horizon": 1,
+    "test_fraction": 0.25,
+    "seed": 0,
+    "train_segments": [
+      0,
+      1,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      11,
+      13,
+      14,
+      15,
+      16,
+      17
+    ],
+    "test_segments": [
+      2,
+      3,
+      10,
+      12
+    ],
+    "n_test_windows": 937,
+    "n_test_transition": 90,
+    "val_segments": [
+      11,
+      15
+    ]
+  },
+  "metrics": {
+    "reactive": {
+      "overall": {
+        "n": 937,
+        "top1": 0.4087513340448239,
+        "top3": 0.7331910352187834,
+        "top5": 0.855923159018143,
+        "power_loss_db_mean": 0.20264566279056864,
+        "power_loss_db_median": 0.03630227210104093,
+        "power_loss_db_p90": 0.5747998072786897
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.4427390791027155,
+        "top3": 0.7839433293978748,
+        "top5": 0.911452184179457,
+        "power_loss_db_mean": 0.17802998649444834,
+        "power_loss_db_median": 0.023199470482653185,
+        "power_loss_db_p90": 0.4996956437486286
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.08888888888888889,
+        "top3": 0.25555555555555554,
+        "top5": 0.3333333333333333,
+        "power_loss_db_mean": 0.4343065274885009,
+        "power_loss_db_median": 0.3080492278535288,
+        "power_loss_db_p90": 0.8785115896374622
+      }
+    },
+    "predict-then-act": {
+      "overall": {
+        "n": 937,
+        "top1": 0.41728922091782283,
+        "top3": 0.7694770544290288,
+        "top5": 0.8954108858057631,
+        "power_loss_db_mean": 0.15326772138909434,
+        "power_loss_db_median": 0.0327190859159559,
+        "power_loss_db_p90": 0.43817202345547396
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.4510035419126328,
+        "top3": 0.820543093270366,
+        "top5": 0.9409681227863046,
+        "power_loss_db_mean": 0.1203293984665786,
+        "power_loss_db_median": 0.020696326120713347,
+        "power_loss_db_p90": 0.34670718998080463
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.1,
+        "top3": 0.28888888888888886,
+        "top5": 0.4666666666666667,
+        "power_loss_db_mean": 0.46325393822654776,
+        "power_loss_db_median": 0.26794309305159425,
+        "power_loss_db_p90": 1.0703240178306586
+      }
+    },
+    "wm-greedy": {
+      "overall": {
+        "n": 937,
+        "top1": 0.40981856990394877,
+        "top3": 0.7716115261472786,
+        "top5": 0.871931696905016,
+        "power_loss_db_mean": 0.17546020217106684,
+        "power_loss_db_median": 0.03409231934006219,
+        "power_loss_db_p90": 0.5034439976851802
+      },
+      "stable": {
+        "n": 847,
+        "top1": 0.44155844155844154,
+        "top3": 0.8181818181818182,
+        "top5": 0.9208972845336482,
+        "power_loss_db_mean": 0.14961437887931925,
+        "power_loss_db_median": 0.022537020499566702,
+        "power_loss_db_p90": 0.4545387622592101
+      },
+      "transition": {
+        "n": 90,
+        "top1": 0.1111111111111111,
+        "top3": 0.3333333333333333,
+        "top5": 0.4111111111111111,
+        "power_loss_db_mean": 0.41869811692784703,
+        "power_loss_db_median": 0.27626827810891763,
+        "power_loss_db_p90": 0.8422428012033609
+      }
+    }
+  },
+  "power_loss_db": {
+    "reactive": {
+      "stable": 0.17802998649444834,
+      "transition": 0.4343065274885009,
+      "overall": 0.20264566279056864
+    },
+    "predict-then-act": {
+      "stable": 0.1203293984665786,
+      "transition": 0.46325393822654776,
+      "overall": 0.15326772138909434
+    },
+    "wm-greedy": {
+      "stable": 0.14961437887931925,
+      "transition": 0.41869811692784703,
+      "overall": 0.17546020217106684
+    }
+  },
+  "distinct_beams": {
+    "reactive": 54,
+    "predict-then-act": 55,
+    "wm-greedy": 49
+  },
+  "distinct_optimal_beams": 54
+}
